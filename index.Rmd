@@ -130,7 +130,7 @@ leaflet() %>%
     addCircleMarkers(data=combined, stroke=F, radius = 3, fillOpacity = 1, fillColor = ~Colour, group=~Group, label=~labs) %>%
   #addCircleMarkers(data=existing_dedicated_ward, stroke=F, radius = 3, fillOpacity = 1, fillColor = "red", group="Existing Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
     addLayersControl(overlayGroups = c("LCCP Not Dedicated", "LCCP To Dedicate", "Existing Dedicated", "Bay Lines"), baseGroups = c("Map", "Satellite"), options=layersControlOptions(collapsed = FALSE)) %>%
-    addMeasure(primaryLengthUnit = "meters", secondaryLengthUnit = "feet", position="top;eft") %>%
+    addMeasure(primaryLengthUnit = "meters", secondaryLengthUnit = "feet", position="topleft") %>%
   addLegendCustom(colors = c("blue", "black", "red", "green"), labels = c("Bay To Dedicated", "Not Dedicated", "Existing Dedicated",  "Bay Lines"), sizes = c(15, 15, 15, 15), position="bottomleft") 
       
 }
