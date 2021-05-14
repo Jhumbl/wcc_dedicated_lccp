@@ -1,5 +1,5 @@
 ---
-title: "City Highways - Title"
+title: "WCC City Highways - Dedicated LCCP"
 output: 
   flexdashboard::flex_dashboard:
     orientation: columns
@@ -15,28 +15,154 @@ library(dplyr)
 library(lubridate)
 library(leaflet)
 library(readr)
+library(sf)
+library(readxl)
+library(leafgl)
 ```
 
 ```{r data_processing, results='hide'}
+# Westminster Wards
+wards <- read_sf("../../../data/clean_data_files/westminster_boundary_files/London-wards-2018/London-wards-2018_ESRI/London_Ward.shp")
+wards <- wards %>% 
+  dplyr::filter(DISTRICT == "City of Westminster") %>%
+  select(NAME)
 
+# Suggested Dedicated Lamp COlumn Charge Pints
+area1 <- read_sf("../../LocationAllocation/area1_ded_v2.geojson")
+area2 <- read_sf("../../LocationAllocation/area2_ded_v2.geojson")
+area3 <- read_sf("../../LocationAllocation/area3_ded_v2.geojson")
+ded_sugg <- bind_rows(area1, area2, area3) %>%
+  st_intersection(wards) %>%
+  st_transform(4326) 
+
+# Lamp Column Charge Points
+ded_ids <-  c("suby1100002553", "suby1100002508", "suby1100002584", "suby1100003290", "suby1100003264", "suby1100002591",
+              "suby1100002559", "steob100000791", "suby1100002500", "suby1100002581", "suby1100003842", "suby1100002879",
+              "suby1100002888", "suby1100002501", "suby1100002628", "suby1100002820", "suby1100002715", "suby1100002436",
+              "suby1100002366", "suby1100002382", "suby1100002429", "suby1100003075", "suby1100002693", "suby1100002354",
+              "suby1100002481", "suby1100002358")
+
+lccp <- read_excel("../../../data/clean_data_files/charger_locations/2021 - 04 Electric Charge Point Master Asset List.xlsx", skip=1)
+lccp <- lccp %>%
+  dplyr::filter(!`L-EV Charge Point ID` %in% ded_sugg$ChargepointID) %>%
+  dplyr::filter(`L-EV Charge Manufacturer`=="Ubitricity") %>%
+  st_as_sf(coords=c("Cent East", "Cent North"), crs=27700) %>%
+  st_intersection(wards) %>%
+  st_transform(4326) 
+
+existing_dedicated <- lccp %>% dplyr::filter(tolower(L.EV.Charge.Point.ID) %in% ded_ids)
+lccp <- lccp %>% dplyr::filter(!tolower(L.EV.Charge.Point.ID) %in% ded_ids)
+
+
+# Bay Lines
+bays <- read_sf("../../../data/clean_data_files/parking_bays/order_lines/OrderLines.shp")
+
+bays <- bays %>%
+  dplyr::filter(is.na(DATE_TO)) %>%
+  dplyr::filter(ORDER_TYPE %in% c("Shared Use Bay", "Resident Bay", "Visitor Shared Use Bay",
+                                  "Electric Vehicle Charging Bay", "Electric Vehicle Resident Bay")) %>%
+  st_intersection(wards) %>%
+  st_transform(4326) 
+
+wards <- wards %>% st_transform(4326)
 ```
 
-Page 1 {data-icon="fa-map"}
+Full Map {data-icon="fa-map"}
 =====================================  
 
 ### Page 1 {.no-padding .no-title}
 
-```{r}
+```{r full_map}
+addLegendCustom <- function(map, colors, labels, sizes, opacity = 1, position="bottomleft"){
+  colorAdditions <- paste0(colors, "; width:", sizes, "px; height:", sizes, "px")
+  labelAdditions <- paste0("<div style='display: inline-block;height: ", sizes, "px;margin-top: 4px;line-height: ", sizes, "px;'>", labels, "</div>")
+
+  return(addLegend(map, colors = colorAdditions, labels = labelAdditions, opacity = opacity, position=position))
+}
+
 leaflet() %>%
-  addTiles() 
+  addProviderTiles(providers$CartoDB.Positron, group="Map", options = providerTileOptions(maxZoom = 24)) %>%
+  addProviderTiles(providers$Esri.WorldImagery, group="Satellite") %>%
+  addPolygons(data=wards, fillOpacity = 0, weight = 1, color = "black", opacity = 1) %>%
+  addGlPolylines(data=bays %>% sf::st_cast("LINESTRING"), color = "darkgreen", weight = 0.8, group="Bay Lines") %>%
+  addCircleMarkers(data=lccp, stroke=F, radius = 3, fillOpacity = 1, fillColor = "black", group="LCCP Not Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
+  addCircleMarkers(data=ded_sugg, stroke=F, radius = 3, fillOpacity = 1, fillColor = "blue", group="LCCP To Dedicate", label=~paste(ChargepointID, LocationName, FeatureLocation, sep=" : ")) %>%
+  addCircleMarkers(data=existing_dedicated, stroke=F, radius = 3, fillOpacity = 1, fillColor = "red", group="Existing Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
+  addLayersControl(overlayGroups = c("LCCP Not Dedicated", "LCCP To Dedicate", "Existing Dedicated", "Bay Lines"), baseGroups = c("Map", "Satellite"), options=layersControlOptions(collapsed = FALSE)) %>%
+  addMeasure(primaryLengthUnit = "meters", secondaryLengthUnit = "feet", position="topleft") %>%
+  addLegendCustom(colors = c("blue", "black", "red", "green"), labels = c("Bay To Dedicated", "Not Dedicated", "Existing Dedicated",  "Bay Lines"), sizes = c(20, 20, 20, 20)) 
+
+
 ```
 
 
+```{r ward_maps_function}
+requests_ward <- read.csv("../../../data/clean_data_files/requests/ward_summary.csv")
+
+plot_map <- function(ward){
+  
+  ward_polygon <- wards %>% dplyr::filter(NAME %in% ward) 
+  
+  # Stats
+  
+  bays_ward <- bays %>% dplyr::filter(NAME %in% ward)
+  
+  ded_sugg_ward <- ded_sugg %>% dplyr::filter(NAME %in% ward) %>% mutate(Colour="blue", 
+                                                                         Group="LCCP To Dedicate",
+                                                                         labs=paste(ChargepointID, LocationName, FeatureLocation, sep=" : "))
+  
+  lccp_ward <- lccp %>% dplyr::filter(NAME %in% ward) %>% mutate(Colour="black", 
+                                                                 Group="LCCP Not Dedicated",
+                                                                 labs=paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : "))
+  
+  existing_dedicated_ward <- existing_dedicated %>% dplyr::filter(NAME %in% ward) %>% mutate(Colour="red", 
+                                                                                             Group="Existing Dedicated",
+                                                                                             labs=paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : "))
+
+  combined <- bind_rows(ded_sugg_ward, lccp_ward, existing_dedicated_ward)
+  
+leaflet() %>%
+    addProviderTiles(providers$CartoDB.Positron, group="Map", options = providerTileOptions(maxZoom = 24)) %>%
+  addProviderTiles(providers$Esri.WorldImagery, group="Satellite") %>%
+    addPolygons(data=ward_polygon, fillOpacity = 0, weight = 1, color = "black", opacity = 1) %>%
+    addGlPolylines(data=bays_ward %>% sf::st_cast("LINESTRING"), color = "darkgreen", weight = 0.8, group="Bay Lines") %>%
+    #addCircleMarkers(data=lccp_ward, stroke=F, radius = 3, fillOpacity = 1, fillColor = "black", group="LCCP Not Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
+    addCircleMarkers(data=combined, stroke=F, radius = 3, fillOpacity = 1, fillColor = ~Colour, group=~Group, label=~labs) %>%
+  #addCircleMarkers(data=existing_dedicated_ward, stroke=F, radius = 3, fillOpacity = 1, fillColor = "red", group="Existing Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
+    addLayersControl(overlayGroups = c("LCCP Not Dedicated", "LCCP To Dedicate", "Existing Dedicated", "Bay Lines"), baseGroups = c("Map", "Satellite"), options=layersControlOptions(collapsed = FALSE)) %>%
+    addMeasure(primaryLengthUnit = "meters", secondaryLengthUnit = "feet", position="top;eft") %>%
+  addLegendCustom(colors = c("blue", "black", "red", "green"), labels = c("Bay To Dedicated", "Not Dedicated", "Existing Dedicated",  "Bay Lines"), sizes = c(15, 15, 15, 15), position="bottomleft") 
+      
+}
+
+
+```
+
+
+```{r ward_maps}
+ward_names <- sort(wards$NAME)
+out <- lapply(seq_along(ward_names), function(i) {
+
+  a1 <- knitr::knit_expand(text = sprintf("\n%s {data-navmenu=\"Wards\" data-icon=\"fa-bars\"}", ward_names[[i]])) # tab header, auto extracts names of `hcs`
+  a2 <- knitr::knit_expand(text = sprintf("\n=====================================\n"))
+  a3 <- knitr::knit_expand(text = sprintf("\n### %s {.no-padding}\n", ward_names[[i]]))
+  a4 <- knitr::knit_expand(text = "\n```{r}") # start r chunk
+  a5 <- knitr::knit_expand(text = sprintf("\nplot_map(\"%s\")\n", ward_names[[i]])) # extract graphs by "writing" out `hcs[[1]]`, `hcs[[2]]` etc. to be rendered later
+  a6 <- knitr::knit_expand(text = "\n```\n") # end r chunk
+
+  paste(a1, a2, a3, a4, a5, a6, collapse = '\n') # collapse together all lines with newline separator
+
+})
+cat("\n")
+cat("\n")
+```
+
+`r paste(knitr::knit(text = paste(out, collapse = '\n')))`
 
 About {data-icon="fa-bars"}
 ===================================== 
 
-#### About title
+#### Dedicated Lamp Column Charge Points
 
 * Author: Westminster City Highways
 * Date Created: 2021-05-14
@@ -44,3 +170,4 @@ About {data-icon="fa-bars"}
 
 <!-- Description of Report -->
 
+This map shows the planned expansion of EV dedicated bays alongside lamp column charge points.
