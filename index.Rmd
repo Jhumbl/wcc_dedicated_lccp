@@ -1,0 +1,46 @@
+---
+title: "City Highways - Title"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    logo: logo.png
+    favicon: logo.png
+    css: styles.css
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(dplyr)
+library(lubridate)
+library(leaflet)
+library(readr)
+```
+
+```{r data_processing, results='hide'}
+
+```
+
+Page 1 {data-icon="fa-map"}
+=====================================  
+
+### Page 1 {.no-padding .no-title}
+
+```{r}
+leaflet() %>%
+  addTiles() 
+```
+
+
+
+About {data-icon="fa-bars"}
+===================================== 
+
+#### About title
+
+* Author: Westminster City Highways
+* Date Created: 2021-05-14
+* Date Updated: `r lubridate::today()`
+
+<!-- Description of Report -->
+
