@@ -31,9 +31,32 @@ wards <- wards %>%
 area1 <- read_sf("../../LocationAllocation/area1_ded_v2.geojson")
 area2 <- read_sf("../../LocationAllocation/area2_ded_v2.geojson")
 area3 <- read_sf("../../LocationAllocation/area3_ded_v2.geojson")
+corrections <- read_excel("~/Documents/WestminsterPosition/organised/Dedicated_LCCP/LocationAllocation/2021 - 05 - 24 Proposed 400 Dedicated Res Bays.xlsx")
+corrections <- corrections %>% 
+  tidyr::replace_na(list(`Bay Position in Lot`="Site Check Required")) %>%
+  dplyr::filter(`Bay Position in Lot` != "Remove") %>%
+  select(`L-EV Charge Point ID`, `Site Name`, `Feat Loc`, `Cent East`, 
+         `Cent North`, `Bay Position in Lot`, `EF Comments`) %>%
+  rename(ChargepointID = `L-EV Charge Point ID`, LocationName=`Site Name`, FeatureLocation = `Feat Loc`)
+  
+corrections$labs <- sapply(seq(nrow(corrections)), function(i) {
+  paste0( '<p><strong>', corrections[i, "LocationName"], '</strong></p><hr></hr><p><strong>Feature: </strong>',
+          corrections[i, "FeatureLocation"], '</p><p><strong>Chargepoint ID: </strong>',
+          corrections[i, "ChargepointID"], '</p><p><strong>Comments: </strong>',
+          corrections[i, "EF Comments"], '</p><p><strong>Bay Location: </strong>',
+          corrections[i, "Bay Position in Lot"],'</p>')
+})
+
+corrections <- corrections %>%
+  st_as_sf(coords=c("Cent East", "Cent North"), crs=27700) %>%
+  st_intersection(wards) %>%
+  st_transform(4326)
+
 ded_sugg <- bind_rows(area1, area2, area3) %>%
   st_intersection(wards) %>%
   st_transform(4326) 
+
+ded_sugg <- corrections
 
 # Lamp Column Charge Points
 ded_ids <-  c("suby1100002553", "suby1100002508", "suby1100002584", "suby1100003290", "suby1100003264", "suby1100002591",
@@ -83,12 +106,13 @@ addLegendCustom <- function(map, colors, labels, sizes, opacity = 1, position="b
 leaflet() %>%
   addProviderTiles(providers$CartoDB.Positron, group="Map", options = providerTileOptions(maxZoom = 24)) %>%
   addProviderTiles(providers$Esri.WorldImagery, group="Satellite") %>%
+  addTiles(group="OSM") %>%
   addPolygons(data=wards, fillOpacity = 0, weight = 1, color = "black", opacity = 1) %>%
   addGlPolylines(data=bays %>% sf::st_cast("LINESTRING"), color = "darkgreen", weight = 0.8, group="Bay Lines") %>%
   addCircleMarkers(data=lccp, stroke=F, radius = 3, fillOpacity = 1, fillColor = "black", group="LCCP Not Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
-  addCircleMarkers(data=ded_sugg, stroke=F, radius = 3, fillOpacity = 1, fillColor = "blue", group="LCCP To Dedicate", label=~paste(ChargepointID, LocationName, FeatureLocation, sep=" : ")) %>%
+  addCircleMarkers(data=ded_sugg, stroke=F, radius = 3, fillOpacity = 1, fillColor = "blue", group="LCCP To Dedicate", label=~paste(ChargepointID, LocationName, FeatureLocation, sep=" : "), popup=~labs) %>%
   addCircleMarkers(data=existing_dedicated, stroke=F, radius = 3, fillOpacity = 1, fillColor = "red", group="Existing Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
-  addLayersControl(overlayGroups = c("LCCP Not Dedicated", "LCCP To Dedicate", "Existing Dedicated", "Bay Lines"), baseGroups = c("Map", "Satellite"), options=layersControlOptions(collapsed = FALSE)) %>%
+  addLayersControl(overlayGroups = c("LCCP Not Dedicated", "LCCP To Dedicate", "Existing Dedicated", "Bay Lines"), baseGroups = c("Map", "Satellite", "OSM"), options=layersControlOptions(collapsed = FALSE)) %>%
   addMeasure(primaryLengthUnit = "meters", secondaryLengthUnit = "feet", position="topleft") %>%
   addLegendCustom(colors = c("blue", "black", "red", "green"), labels = c("Bay To Dedicated", "Not Dedicated", "Existing Dedicated",  "Bay Lines"), sizes = c(20, 20, 20, 20)) 
 
@@ -97,7 +121,7 @@ leaflet() %>%
 
 
 ```{r ward_maps_function}
-requests_ward <- read.csv("../../../data/clean_data_files/requests/ward_summary.csv")
+#requests_ward <- read.csv("../../../data/clean_data_files/requests/ward_summary.csv")
 
 plot_map <- function(ward){
   
@@ -123,13 +147,14 @@ plot_map <- function(ward){
   
 leaflet() %>%
     addProviderTiles(providers$CartoDB.Positron, group="Map", options = providerTileOptions(maxZoom = 24)) %>%
-  addProviderTiles(providers$Esri.WorldImagery, group="Satellite") %>%
+    addProviderTiles(providers$Esri.WorldImagery, group="Satellite") %>%
+    addTiles(group="OSM") %>%
     addPolygons(data=ward_polygon, fillOpacity = 0, weight = 1, color = "black", opacity = 1) %>%
     addGlPolylines(data=bays_ward %>% sf::st_cast("LINESTRING"), color = "darkgreen", weight = 0.8, group="Bay Lines") %>%
     #addCircleMarkers(data=lccp_ward, stroke=F, radius = 3, fillOpacity = 1, fillColor = "black", group="LCCP Not Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
     addCircleMarkers(data=combined, stroke=F, radius = 3, fillOpacity = 1, fillColor = ~Colour, group=~Group, label=~labs) %>%
   #addCircleMarkers(data=existing_dedicated_ward, stroke=F, radius = 3, fillOpacity = 1, fillColor = "red", group="Existing Dedicated", label=~paste(L.EV.Charge.Point.ID, Site.Name, Feat.Loc, sep=" : ")) %>%
-    addLayersControl(overlayGroups = c("LCCP Not Dedicated", "LCCP To Dedicate", "Existing Dedicated", "Bay Lines"), baseGroups = c("Map", "Satellite"), options=layersControlOptions(collapsed = FALSE)) %>%
+    addLayersControl(overlayGroups = c("LCCP Not Dedicated", "LCCP To Dedicate", "Existing Dedicated", "Bay Lines"), baseGroups = c("Map", "Satellite", "OSM"), options=layersControlOptions(collapsed = FALSE)) %>%
     addMeasure(primaryLengthUnit = "meters", secondaryLengthUnit = "feet", position="topleft") %>%
   addLegendCustom(colors = c("blue", "black", "red", "green"), labels = c("Bay To Dedicated", "Not Dedicated", "Existing Dedicated",  "Bay Lines"), sizes = c(15, 15, 15, 15), position="bottomleft") 
       
