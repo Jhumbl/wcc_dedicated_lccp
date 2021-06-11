@@ -27,11 +27,9 @@ wards <- wards %>%
   dplyr::filter(DISTRICT == "City of Westminster") %>%
   select(NAME)
 
-# Suggested Dedicated Lamp COlumn Charge Pints
-area1 <- read_sf("../../LocationAllocation/area1_ded_v2.geojson")
-area2 <- read_sf("../../LocationAllocation/area2_ded_v2.geojson")
-area3 <- read_sf("../../LocationAllocation/area3_ded_v2.geojson")
+
 corrections <- read_excel("~/Documents/WestminsterPosition/organised/Dedicated_LCCP/LocationAllocation/2021 - 05 - 24 Proposed 400 Dedicated Res Bays.xlsx")
+
 corrections <- corrections %>% 
   tidyr::replace_na(list(`Bay Position in Lot`="Site Check Required")) %>%
   dplyr::filter(`Bay Position in Lot` != "Remove") %>%
@@ -52,9 +50,6 @@ corrections <- corrections %>%
   st_intersection(wards) %>%
   st_transform(4326)
 
-ded_sugg <- bind_rows(area1, area2, area3) %>%
-  st_intersection(wards) %>%
-  st_transform(4326) 
 
 ded_sugg <- corrections
 
@@ -76,6 +71,13 @@ lccp <- lccp %>%
 existing_dedicated <- lccp %>% dplyr::filter(tolower(L.EV.Charge.Point.ID) %in% ded_ids)
 lccp <- lccp %>% dplyr::filter(!tolower(L.EV.Charge.Point.ID) %in% ded_ids)
 
+lccp$nearest_feature_id <- st_nearest_feature(st_transform(lccp,27700), st_transform(ded_sugg, 27700))
+lccp$distance <- NA
+for (i in 1:nrow(lccp)){
+  lccp$distance[i] <- st_distance(lccp[i,], ded_sugg[lccp$nearest_feature_id[i], ])
+}
+
+lccp <- lccp %>% dplyr::filter(distance > 2)
 
 # Bay Lines
 bays <- read_sf("../../../data/clean_data_files/parking_bays/order_lines/OrderLines.shp")
