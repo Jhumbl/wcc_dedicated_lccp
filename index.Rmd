@@ -18,6 +18,7 @@ library(readr)
 library(sf)
 library(readxl)
 library(leafgl)
+library(stringr)
 ```
 
 ```{r data_processing, results='hide'}
@@ -30,22 +31,26 @@ wards <- wards %>%
 
 corrections <- read_excel("~/Documents/WestminsterPosition/organised/Dedicated_LCCP/LocationAllocation/2021 - 05 - 24 Proposed 400 Dedicated Res Bays.xlsx")
 
+corrections <- read_excel("LCCP Action Log - Active.xlsx", sheet="Pending Dedicated EV Res Bays")
+
 corrections <- corrections %>% 
   tidyr::replace_na(list(`Bay Position in Lot`="Site Check Required")) %>%
   dplyr::filter(`Bay Position in Lot` != "Remove") %>%
-  select(`L-EV Charge Point ID`, `Site Name`, `Feat Loc`, `Cent East`, 
-         `Cent North`, `Bay Position in Lot`, `EF Comments`) %>%
+  mutate(id=paste(str_to_lower(`Site Name`), str_to_lower(`Lamp Col No`), sep="_")) %>%
+  select(`L-EV Charge Point ID`, id, `Site Name`, `Lamp Col No`, `Feat Loc`, `Cent East`, 
+         `Cent North`, `Bay Position in Lot`, `WCC Site Comments`) %>%
   rename(ChargepointID = `L-EV Charge Point ID`, LocationName=`Site Name`, FeatureLocation = `Feat Loc`)
   
 corrections$labs <- sapply(seq(nrow(corrections)), function(i) {
   paste0( '<p><strong>', corrections[i, "LocationName"], '</strong></p><hr></hr><p><strong>Feature: </strong>',
           corrections[i, "FeatureLocation"], '</p><p><strong>Chargepoint ID: </strong>',
           corrections[i, "ChargepointID"], '</p><p><strong>Comments: </strong>',
-          corrections[i, "EF Comments"], '</p><p><strong>Bay Location: </strong>',
+          corrections[i, "WCC Site Comments"], '</p><p><strong>Bay Location: </strong>',
           corrections[i, "Bay Position in Lot"],'</p>')
 })
 
 corrections <- corrections %>%
+  dplyr::filter(!is.na(`Cent East`)) %>%
   st_as_sf(coords=c("Cent East", "Cent North"), crs=27700) %>%
   st_intersection(wards) %>%
   st_transform(4326)
@@ -60,9 +65,9 @@ ded_ids <-  c("suby1100002553", "suby1100002508", "suby1100002584", "suby1100003
               "suby1100002366", "suby1100002382", "suby1100002429", "suby1100003075", "suby1100002693", "suby1100002354",
               "suby1100002481", "suby1100002358")
 
-lccp <- read_excel("../../../data/clean_data_files/charger_locations/2021 - 04 Electric Charge Point Master Asset List.xlsx", skip=1)
+lccp <- read_excel("../../../../ElectricVehicles/Data/LocationData/2022 - 02 Electric Charge Point Master Asset List.xlsx", skip=1) %>% mutate(id=paste(str_to_lower(`Site Name`), str_to_lower(`Lamp Col No`), sep="_"))
 lccp <- lccp %>%
-  dplyr::filter(!`L-EV Charge Point ID` %in% ded_sugg$ChargepointID) %>%
+  dplyr::filter(!id %in% ded_sugg$id) %>%
   dplyr::filter(`L-EV Charge Manufacturer`=="Ubitricity") %>%
   st_as_sf(coords=c("Cent East", "Cent North"), crs=27700) %>%
   st_intersection(wards) %>%
